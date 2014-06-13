@@ -12,21 +12,18 @@
 #    See the License for the specific language governing permissions and
 #    limitations under the License.
 
-# After a {Key}'s readiness is changed, we need to recalculate the
-# "readiness" of every {Commit} associated with that Key.
-
-class KeyReadinessRecalculator
+class ProjectTranslationAdderForKeyGroups
   include Sidekiq::Worker
-  sidekiq_options queue: :low
+  sidekiq_options queue: :high
 
   # Executes this worker.
   #
-  # @param [Fixnum] key_id The ID of a Key.
+  # @param [Fixnum] project_id The ID of a Project.
 
-  def perform(key_id)
-    key = Key.find(key_id)
-    key.commits.find_each(&:recalculate_ready!)
-    key.key_groups.find_each(&:recalculate_ready!)
+  def perform(project_id)
+    Project.find(project_id).key_groups.where(targeted_rfc5646_locales: nil).each do |key_group|
+      key_group.import!
+    end
   end
 
   include SidekiqLocking

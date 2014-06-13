@@ -103,6 +103,7 @@ en:
       invalid_sha: is not a valid SHA2 digest
       unknown_sha: does not exist in the Git repository
       wrong_sha_type: is not the correct Git object type
+      readonly: cannot be changed
   helpers:
     submit:
       commit:

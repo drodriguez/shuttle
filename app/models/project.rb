@@ -83,6 +83,7 @@ class Project < ActiveRecord::Base
   has_many :keys, inverse_of: :project, dependent: :destroy
   has_many :blobs, inverse_of: :project, dependent: :delete_all
   has_many :translations, through: :keys
+  has_many :key_groups, inverse_of: :project
 
   include HasMetadataColumn
   has_metadata_column(
@@ -117,12 +118,7 @@ class Project < ActiveRecord::Base
   include Slugalicious
   slugged :name
 
-  extend LocaleField
-  locale_field :base_locale, from: :base_rfc5646_locale
-  locale_field :locale_requirements,
-               from:   :targeted_rfc5646_locales,
-               reader: ->(values) { values.inject({}) { |hsh, (k, v)| hsh[Locale.from_rfc5646(k)] = v; hsh } },
-               writer: ->(values) { values.inject({}) { |hsh, (k, v)| hsh[k.rfc5646] = v; hsh } }
+  include CommonLocaleLogic
 
   validates :name,
             presence: true,
@@ -130,18 +126,21 @@ class Project < ActiveRecord::Base
   validates :repository_url,
             presence:   true
   validates :api_key,
-            presence: true
-            #uniqueness: true,
-            #length:     {is: 36},
-            #format:     {with: /[0-9a-f\-]+/}
+            presence: true,
+            uniqueness: true,
+            length:     {is: 36},
+            format:     {with: /[0-9a-f\-]+/}
 
   validate :can_clone_repo, if: :validate_repo_connectivity
-  validate :require_valid_locales_hash
 
   before_validation :create_api_key, on: :create
   before_validation { |obj| obj.skip_imports.reject!(&:blank?) }
   after_update :add_or_remove_pending_translations
   after_update :invalidate_manifests_and_localizations
+
+  def keys_with_commits
+    keys.joins(:commits_keys).uniq
+  end
 
   # Returns a `Git::Repository` proxy object that allows you to work with the
   # local checkout of this Project's repository. The repository will be checked
@@ -225,21 +224,6 @@ class Project < ActiveRecord::Base
   def latest_commit
     commits.order('committed_at DESC').first
   end
-
-  # @return [Array<Locale>] The locales this Project can be localized to.
-  def targeted_locales() targeted_rfc5646_locales.keys.map { |l| Locale.from_rfc5646(l) } end
-
-  # @return [Array<Locale>] The locales this Project *must* be localized to.
-  def required_locales() targeted_rfc5646_locales.select { |_, req| req }.map(&:first).map { |l| Locale.from_rfc5646(l) } end
-
-  def required_rfc5646_locales
-    targeted_rfc5646_locales.select { |_, req| req }.map(&:first)
-  end 
-
-  def other_rfc5646_locales
-    targeted_rfc5646_locales.select { |_, req| !req }.map(&:first)
-  end 
-
 
   # Generates a new API key for the Project. Does not save the Project.
   def create_api_key() self.api_key = SecureRandom.uuid end
@@ -422,16 +406,16 @@ class Project < ActiveRecord::Base
   end
 
   def add_or_remove_pending_translations
-    ProjectTranslationAdder.perform_once id
+    if %w{targeted_rfc5646_locales key_exclusions key_inclusions key_locale_exclusions key_locale_inclusions}.any?{|field| previous_changes.include?(field)}
+      ProjectTranslationAdder.perform_once id
+    end
+    if %w{targeted_rfc5646_locales}.any?{|field| previous_changes.include?(field)}
+      ProjectTranslationAdderForKeyGroups.perform_once id
+    end
   end
 
   def invalidate_manifests_and_localizations
     keys = Shuttle::Redis.keys("manifest:#{id}:*") + Shuttle::Redis.keys("localize:#{id}:*")
     Shuttle::Redis.del(*keys) unless keys.empty?
-  end
-
-  def require_valid_locales_hash
-    errors.add(:targeted_rfc5646_locales, :invalid) unless targeted_rfc5646_locales.keys.all? { |k| k.kind_of?(String) } &&
-        targeted_rfc5646_locales.values.all? { |v| v == true || v == false }
   end
 end

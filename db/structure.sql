@@ -261,6 +261,66 @@ ALTER SEQUENCE issues_id_seq OWNED BY issues.id;
 
 
 --
+-- Name: key_groups; Type: TABLE; Schema: public; Owner: -; Tablespace: 
+--
+
+CREATE TABLE key_groups (
+    id integer NOT NULL,
+    project_id integer NOT NULL,
+    key text NOT NULL,
+    key_sha_raw bytea NOT NULL,
+    source_copy text NOT NULL,
+    source_copy_sha_raw bytea NOT NULL,
+    description text,
+    email character varying(255),
+    metadata text,
+    loading boolean DEFAULT false NOT NULL,
+    ready boolean DEFAULT false NOT NULL,
+    first_import_requested_at timestamp without time zone,
+    last_import_requested_at timestamp without time zone,
+    first_import_started_at timestamp without time zone,
+    last_import_started_at timestamp without time zone,
+    first_import_finished_at timestamp without time zone,
+    last_import_finished_at timestamp without time zone,
+    first_completed_at timestamp without time zone,
+    last_completed_at timestamp without time zone,
+    created_at timestamp without time zone NOT NULL,
+    updated_at timestamp without time zone NOT NULL
+);
+
+
+--
+-- Name: key_groups_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE key_groups_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: key_groups_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE key_groups_id_seq OWNED BY key_groups.id;
+
+
+--
+-- Name: key_groups_keys; Type: TABLE; Schema: public; Owner: -; Tablespace: 
+--
+
+CREATE TABLE key_groups_keys (
+    key_group_id integer NOT NULL,
+    key_id integer NOT NULL,
+    created_at timestamp without time zone,
+    updated_at timestamp without time zone
+);
+
+
+--
 -- Name: keys; Type: TABLE; Schema: public; Owner: -; Tablespace: 
 --
 
@@ -663,6 +723,13 @@ ALTER TABLE ONLY issues ALTER COLUMN id SET DEFAULT nextval('issues_id_seq'::reg
 -- Name: id; Type: DEFAULT; Schema: public; Owner: -
 --
 
+ALTER TABLE ONLY key_groups ALTER COLUMN id SET DEFAULT nextval('key_groups_id_seq'::regclass);
+
+
+--
+-- Name: id; Type: DEFAULT; Schema: public; Owner: -
+--
+
 ALTER TABLE ONLY keys ALTER COLUMN id SET DEFAULT nextval('keys_id_seq'::regclass);
 
 
@@ -799,6 +866,22 @@ ALTER TABLE ONLY glossary_entries
 
 ALTER TABLE ONLY issues
     ADD CONSTRAINT issues_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: key_groups_keys_pkey; Type: CONSTRAINT; Schema: public; Owner: -; Tablespace: 
+--
+
+ALTER TABLE ONLY key_groups_keys
+    ADD CONSTRAINT key_groups_keys_pkey PRIMARY KEY (key_group_id, key_id);
+
+
+--
+-- Name: key_groups_pkey; Type: CONSTRAINT; Schema: public; Owner: -; Tablespace: 
+--
+
+ALTER TABLE ONLY key_groups
+    ADD CONSTRAINT key_groups_pkey PRIMARY KEY (id);
 
 
 --
@@ -999,6 +1082,34 @@ CREATE INDEX issues_updater ON issues USING btree (updater_id);
 --
 
 CREATE INDEX issues_user ON issues USING btree (user_id);
+
+
+--
+-- Name: key_groups_keys_key_group_id; Type: INDEX; Schema: public; Owner: -; Tablespace: 
+--
+
+CREATE INDEX key_groups_keys_key_group_id ON key_groups_keys USING btree (key_group_id);
+
+
+--
+-- Name: key_groups_keys_key_id; Type: INDEX; Schema: public; Owner: -; Tablespace: 
+--
+
+CREATE INDEX key_groups_keys_key_id ON key_groups_keys USING btree (key_id);
+
+
+--
+-- Name: key_groups_project; Type: INDEX; Schema: public; Owner: -; Tablespace: 
+--
+
+CREATE INDEX key_groups_project ON key_groups USING btree (project_id);
+
+
+--
+-- Name: key_groups_project_keys_unique; Type: INDEX; Schema: public; Owner: -; Tablespace: 
+--
+
+CREATE UNIQUE INDEX key_groups_project_keys_unique ON key_groups USING btree (project_id, key_sha_raw);
 
 
 --
@@ -1208,6 +1319,30 @@ ALTER TABLE ONLY issues
 
 
 --
+-- Name: key_groups_keys_key_group_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY key_groups_keys
+    ADD CONSTRAINT key_groups_keys_key_group_id_fkey FOREIGN KEY (key_group_id) REFERENCES key_groups(id) ON DELETE CASCADE;
+
+
+--
+-- Name: key_groups_keys_key_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY key_groups_keys
+    ADD CONSTRAINT key_groups_keys_key_id_fkey FOREIGN KEY (key_id) REFERENCES keys(id) ON DELETE CASCADE;
+
+
+--
+-- Name: key_groups_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY key_groups
+    ADD CONSTRAINT key_groups_project_id_fkey FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE;
+
+
+--
 -- Name: keys_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1362,3 +1497,7 @@ INSERT INTO schema_migrations (version) VALUES ('20140531020536');
 INSERT INTO schema_migrations (version) VALUES ('20140606111509');
 
 INSERT INTO schema_migrations (version) VALUES ('20140613215228');
+
+INSERT INTO schema_migrations (version) VALUES ('20140616232942');
+
+INSERT INTO schema_migrations (version) VALUES ('20140616234757');

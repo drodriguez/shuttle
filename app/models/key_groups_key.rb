@@ -12,22 +12,10 @@
 #    See the License for the specific language governing permissions and
 #    limitations under the License.
 
-# After a {Key}'s readiness is changed, we need to recalculate the
-# "readiness" of every {Commit} associated with that Key.
+class KeyGroupsKey < ActiveRecord::Base
+  belongs_to :key, inverse_of: :key_groups_keys
+  belongs_to :key_group, inverse_of: :key_groups_keys
 
-class KeyReadinessRecalculator
-  include Sidekiq::Worker
-  sidekiq_options queue: :low
-
-  # Executes this worker.
-  #
-  # @param [Fixnum] key_id The ID of a Key.
-
-  def perform(key_id)
-    key = Key.find(key_id)
-    key.commits.find_each(&:recalculate_ready!)
-    key.key_groups.find_each(&:recalculate_ready!)
-  end
-
-  include SidekiqLocking
+  validates :key_id, presence: true, uniqueness: {scope: :key_group_id}
+  validates :key_group_id, presence: true, uniqueness: {scope: :key_id}
 end

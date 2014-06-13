@@ -80,6 +80,8 @@ class Key < ActiveRecord::Base
   has_many :commits, through: :commits_keys
   has_many :blobs_keys, dependent: :delete_all, inverse_of: :key
   has_many :blobs, through: :blobs_keys
+  has_many :key_groups_keys, dependent: :delete_all, inverse_of: :key
+  has_many :key_groups, through: :key_groups_keys
 
   include HasMetadataColumn
   has_metadata_column(
@@ -125,8 +127,7 @@ class Key < ActiveRecord::Base
     indexes :commit_ids, as: 'batched_commit_ids.try!(:to_a) || commits_keys.pluck(:commit_id)'
   end
 
-  after_commit :add_or_remove_translations, on: :create, if: :apply_readiness_hooks?
-  after_update :update_commit_readiness, if: :apply_readiness_hooks?
+  after_update :update_commit_and_key_group_readiness, if: :apply_readiness_hooks?
 
   validates :project,
             presence: true
@@ -139,6 +140,10 @@ class Key < ActiveRecord::Base
   attr_readonly :project_id, :key, :original_key, :source_copy
 
   scope :in_blob, ->(blob) { where(project_id: blob.project_id, sha_raw: blob.sha_raw) }
+
+  def key_group
+    key_groups.last
+  end
 
   # TODO:
   def self.total_strings
@@ -175,25 +180,35 @@ class Key < ActiveRecord::Base
   def importer_name() importer_class.human_name end
 
   # Scans all of the base Translations under this Key and adds Translations for
-  # each of the Project's required locales where such a Translation does not
-  # already exist.
+  # each of the required locales and base locale where such a Translation
+  # does not already exist.
+  #
+  # If this key is associated with a key_group, base_locale and targeted_locales are
+  # retrieved from the KeyGroup. Otherwise, they are retrieved from Project.
   #
   # This is used, for example, when a Project adds a new required localization,
   # to create pending Translation requests for each string in the new locale.
 
   def add_pending_translations
-    base_translation = translations.base.first
-    return unless base_translation
+    base_locale = key_group ? key_group.base_locale : project.base_locale
+    targeted_locales = key_group ? key_group.locale_requirements.keys : project.targeted_locales
 
-    project.targeted_locales.each do |locale, _|
-      next if project.skip_key?(key, locale)
+    translations.in_locale(base_locale).find_or_create!(
+        source_copy:              source_copy,
+        copy:                     source_copy,
+        source_rfc5646_locale:    base_locale.rfc5646,
+        rfc5646_locale:           base_locale.rfc5646,
+        approved:                 true,
+        preserve_reviewed_status: true)
 
-      translations.where(rfc5646_locale: locale.rfc5646).find_or_create! do |t|
-        t.source_locale        = base_translation.source_locale
-        t.locale               = locale
-        t.source_copy          = base_translation.source_copy
-        t.skip_readiness_hooks = true
-      end
+    targeted_locales.each do |locale|
+      next if !key_group && project.skip_key?(key, locale)
+      translations.in_locale(locale).find_or_create!(
+        source_locale: base_locale,
+        locale: locale,
+        source_copy: source_copy,
+        skip_readiness_hooks: true
+      )
     end
   end
 
@@ -204,7 +219,10 @@ class Key < ActiveRecord::Base
 
   def remove_excluded_pending_translations
     translations.where(approved: nil, translated: false).find_each do |translation|
-      translation.destroy if project.skip_key?(key, translation.locale)
+      if (!key_group && project.skip_key?(key, translation.locale)) ||
+          (key_group && !key_group.skip_locale?(translation.locale))
+        translation.destroy
+      end
     end
   end
 
@@ -216,19 +234,25 @@ class Key < ActiveRecord::Base
     update_column :ready, ready
 
     # update_column doesn't run hooks and doesn't change the changes array so
-    # we need to force-update update_commit_readiness
-    update_commit_readiness(true) if !skip_readiness_hooks && ready != ready_was
+    # we need to force-update update_commit_and_key_group_readiness
+    if !skip_readiness_hooks && ready != ready_was
+      update_commit_and_key_group_readiness(true)
+    end
     tire.update_index
   end
 
-  # @return [true, false] `true` if this Commit should now be marked as ready.
+  # @return [true, false] `true` if this Key should now be marked as ready.
 
   def should_become_ready?
     if translations.loaded?
-      translations.select { |t| project.required_locales.include?(t.locale) }.all?(&:approved?)
+      translations.select { |t| required_locales.include?(t.locale) }.all?(&:approved?)
     else
-      !translations.in_locale(*project.required_locales).where('approved IS NOT TRUE').exists?
+      !translations.in_locale(*required_locales).where('approved IS NOT TRUE').exists?
     end
+  end
+
+  def required_locales
+    key_group ? key_group.required_locales : project.required_locales
   end
 
   # @private
@@ -240,12 +264,9 @@ class Key < ActiveRecord::Base
 
   private
 
-  def update_commit_readiness(force=false)
+  def update_commit_and_key_group_readiness(force=false)
     return if !ready_changed? && !force
     KeyReadinessRecalculator.perform_once id
   end
 
-  def add_or_remove_translations
-    KeyTranslationAdder.perform_once id
-  end
 end
