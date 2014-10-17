@@ -104,3 +104,7 @@ group :development, :test do
   #gem 'jasminerice'
   #gem 'guard-jasmine'
 end
+
+# Deploying
+gem 'capistrano', '~> 3.2.1'
+gem 'capistrano-rails', '~> 1.1'
