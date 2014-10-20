@@ -106,5 +106,8 @@ group :development, :test do
 end
 
 # Deploying
-gem 'capistrano', '~> 3.2.1'
-gem 'capistrano-rails', '~> 1.1'
+group :deploying do
+  gem 'capistrano', '~> 3.2.1'
+  gem 'capistrano-rails', '~> 1.1'
+  gem 'capistrano-sidekiq', '~> 0.3.8'
+end

@@ -27,7 +27,7 @@ set :ssh_options, {
 }
 
 # Default value for :pty is false
-set :pty, true
+# set :pty, true
 
 # Default value for :linked_files is []
 set :linked_files, %w{config/database.yml .rbenv-vars}
@@ -40,6 +40,8 @@ set :default_env, { path: "/opt/rbenv/shims:$PATH" }
 
 # Default value for keep_releases is 5
 set :keep_releases, 5
+
+set :bundle_without, %w{development test acceptance deploying}.join(' ')
 
 namespace :deploy do
 
